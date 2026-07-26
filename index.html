@@ -1,0 +1,349 @@
+import { useEffect, useState } from 'react';
+import { stationApi, readingApi } from '../api';
+import { badgeClass, formatDate } from '../utils/aqi';
+import Loader from '../components/Loader';
+
+const EMPTY_STATION = { name: '', stationCode: '', zone: '', city: '', lat: '', lng: '', status: 'active' };
+const EMPTY_READING = { station: '', pm25: '', pm10: '', co2: '', no2: '', so2: '', o3: '', temperature: '', humidity: '' };
+
+export default function AdminPanel() {
+  const [tab, setTab] = useState('stations');
+  const [stations, setStations] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
+
+  const [stationForm, setStationForm] = useState(EMPTY_STATION);
+  const [editingId, setEditingId] = useState(null);
+
+  const [readingForm, setReadingForm] = useState(EMPTY_READING);
+  const [lastResult, setLastResult] = useState(null);
+
+  const loadStations = async () => {
+    setLoading(true);
+    try {
+      const { data } = await stationApi.getAll();
+      setStations(data.stations);
+    } catch (err) {
+      setError(err.response?.data?.message || 'Could not load stations.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadStations();
+  }, []);
+
+  const resetMessages = () => {
+    setError('');
+    setSuccess('');
+  };
+
+  // ---- Station form handlers ------------------------------------------------
+  const handleStationChange = (e) => setStationForm({ ...stationForm, [e.target.name]: e.target.value });
+
+  const handleStationSubmit = async (e) => {
+    e.preventDefault();
+    resetMessages();
+    try {
+      const payload = {
+        name: stationForm.name,
+        stationCode: stationForm.stationCode,
+        zone: stationForm.zone,
+        city: stationForm.city || 'Unspecified',
+        status: stationForm.status,
+        location: { lat: Number(stationForm.lat), lng: Number(stationForm.lng) },
+      };
+
+      if (editingId) {
+        await stationApi.update(editingId, payload);
+        setSuccess('Station updated successfully.');
+      } else {
+        await stationApi.create(payload);
+        setSuccess('Station created successfully.');
+      }
+
+      setStationForm(EMPTY_STATION);
+      setEditingId(null);
+      loadStations();
+    } catch (err) {
+      setError(err.response?.data?.message || 'Could not save station.');
+    }
+  };
+
+  const handleEdit = (station) => {
+    setEditingId(station._id);
+    setStationForm({
+      name: station.name,
+      stationCode: station.stationCode,
+      zone: station.zone,
+      city: station.city,
+      lat: station.location.lat,
+      lng: station.location.lng,
+      status: station.status,
+    });
+    setTab('stations');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const handleDelete = async (id) => {
+    if (!window.confirm('Delete this station and all its readings/alerts? This cannot be undone.')) return;
+    resetMessages();
+    try {
+      await stationApi.remove(id);
+      setSuccess('Station deleted.');
+      loadStations();
+    } catch (err) {
+      setError(err.response?.data?.message || 'Could not delete station.');
+    }
+  };
+
+  const cancelEdit = () => {
+    setEditingId(null);
+    setStationForm(EMPTY_STATION);
+  };
+
+  // ---- Reading form handlers ------------------------------------------------
+  const handleReadingChange = (e) => setReadingForm({ ...readingForm, [e.target.name]: e.target.value });
+
+  const handleReadingSubmit = async (e) => {
+    e.preventDefault();
+    resetMessages();
+    setLastResult(null);
+    try {
+      const payload = {
+        station: readingForm.station,
+        pm25: Number(readingForm.pm25),
+        pm10: Number(readingForm.pm10),
+        co2: readingForm.co2 ? Number(readingForm.co2) : undefined,
+        no2: readingForm.no2 ? Number(readingForm.no2) : undefined,
+        so2: readingForm.so2 ? Number(readingForm.so2) : undefined,
+        o3: readingForm.o3 ? Number(readingForm.o3) : undefined,
+        temperature: readingForm.temperature ? Number(readingForm.temperature) : undefined,
+        humidity: readingForm.humidity ? Number(readingForm.humidity) : undefined,
+      };
+      const { data } = await readingApi.create(payload);
+      setLastResult(data.reading);
+      setSuccess(data.alert ? 'Reading logged — an alert was triggered.' : 'Reading logged successfully.');
+      setReadingForm({ ...EMPTY_READING, station: readingForm.station });
+      loadStations();
+    } catch (err) {
+      setError(err.response?.data?.message || 'Could not submit reading.');
+    }
+  };
+
+  return (
+    <div className="page">
+      <div className="page-header">
+        <div>
+          <span className="eyebrow">Administration</span>
+          <h1>Admin panel</h1>
+          <p className="subtitle">Manage monitoring stations and log new sensor readings.</p>
+        </div>
+      </div>
+
+      <div className="tag-select" style={{ marginBottom: 20 }}>
+        <button className={`tag-option${tab === 'stations' ? ' active' : ''}`} onClick={() => setTab('stations')}>
+          Stations
+        </button>
+        <button className={`tag-option${tab === 'readings' ? ' active' : ''}`} onClick={() => setTab('readings')}>
+          Log a reading
+        </button>
+      </div>
+
+      {error && <div className="error-banner">{error}</div>}
+      {success && (
+        <div className="error-banner" style={{ background: 'var(--aqi-good-bg)', color: 'var(--aqi-good)', borderColor: 'rgba(74,222,128,0.3)' }}>
+          {success}
+        </div>
+      )}
+
+      {tab === 'stations' && (
+        <>
+          <div className="card" style={{ marginBottom: 28 }}>
+            <div className="section-title">{editingId ? 'Edit station' : 'Add a new station'}</div>
+            <form onSubmit={handleStationSubmit}>
+              <div className="form-row">
+                <div className="form-field">
+                  <label>Station name</label>
+                  <input name="name" required value={stationForm.name} onChange={handleStationChange} placeholder="MG Road Junction" />
+                </div>
+                <div className="form-field">
+                  <label>Station code</label>
+                  <input name="stationCode" required value={stationForm.stationCode} onChange={handleStationChange} placeholder="BLR-07" />
+                </div>
+              </div>
+              <div className="form-row">
+                <div className="form-field">
+                  <label>Zone / area</label>
+                  <input name="zone" required value={stationForm.zone} onChange={handleStationChange} placeholder="Indiranagar" />
+                </div>
+                <div className="form-field">
+                  <label>City</label>
+                  <input name="city" value={stationForm.city} onChange={handleStationChange} placeholder="Bengaluru" />
+                </div>
+              </div>
+              <div className="form-row">
+                <div className="form-field">
+                  <label>Latitude</label>
+                  <input name="lat" type="number" step="any" required value={stationForm.lat} onChange={handleStationChange} placeholder="12.9716" />
+                </div>
+                <div className="form-field">
+                  <label>Longitude</label>
+                  <input name="lng" type="number" step="any" required value={stationForm.lng} onChange={handleStationChange} placeholder="77.5946" />
+                </div>
+              </div>
+              <div className="form-field">
+                <label>Status</label>
+                <select name="status" value={stationForm.status} onChange={handleStationChange}>
+                  <option value="active">Active</option>
+                  <option value="maintenance">Maintenance</option>
+                  <option value="offline">Offline</option>
+                </select>
+              </div>
+              <div style={{ display: 'flex', gap: 10 }}>
+                <button type="submit" className="btn btn-primary">
+                  {editingId ? 'Save changes' : 'Create station'}
+                </button>
+                {editingId && (
+                  <button type="button" className="btn btn-secondary" onClick={cancelEdit}>
+                    Cancel
+                  </button>
+                )}
+              </div>
+            </form>
+          </div>
+
+          <div className="section-title">All stations</div>
+          <div className="card" style={{ padding: 0, overflowX: 'auto' }}>
+            {loading ? (
+              <Loader label="Loading stations" />
+            ) : (
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>Name</th>
+                    <th>Code</th>
+                    <th>Zone</th>
+                    <th>Status</th>
+                    <th>Latest AQI</th>
+                    <th>Updated</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {stations.map((s) => (
+                    <tr key={s._id}>
+                      <td>{s.name}</td>
+                      <td className="mono">{s.stationCode}</td>
+                      <td>{s.zone}</td>
+                      <td>
+                        <span className={s.status === 'active' ? 'badge badge-good' : 'badge badge-neutral'}>
+                          {s.status}
+                        </span>
+                      </td>
+                      <td>
+                        {s.latestReading?.aqi != null ? (
+                          <span className={badgeClass(s.latestReading.category)}>{s.latestReading.aqi}</span>
+                        ) : (
+                          '—'
+                        )}
+                      </td>
+                      <td className="text-muted" style={{ fontSize: 12 }}>
+                        {s.latestReading?.recordedAt ? formatDate(s.latestReading.recordedAt) : '—'}
+                      </td>
+                      <td style={{ display: 'flex', gap: 8 }}>
+                        <button className="btn btn-secondary" onClick={() => handleEdit(s)}>
+                          Edit
+                        </button>
+                        <button className="btn btn-danger" onClick={() => handleDelete(s._id)}>
+                          Delete
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        </>
+      )}
+
+      {tab === 'readings' && (
+        <div className="card">
+          <div className="section-title">Log a new sensor reading</div>
+          <form onSubmit={handleReadingSubmit}>
+            <div className="form-field">
+              <label>Station</label>
+              <select name="station" required value={readingForm.station} onChange={handleReadingChange}>
+                <option value="">Select a station…</option>
+                {stations.map((s) => (
+                  <option key={s._id} value={s._id}>
+                    {s.name} ({s.stationCode})
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="form-row">
+              <div className="form-field">
+                <label>PM2.5 (µg/m³)</label>
+                <input name="pm25" type="number" step="any" required value={readingForm.pm25} onChange={handleReadingChange} />
+              </div>
+              <div className="form-field">
+                <label>PM10 (µg/m³)</label>
+                <input name="pm10" type="number" step="any" required value={readingForm.pm10} onChange={handleReadingChange} />
+              </div>
+            </div>
+            <div className="form-row">
+              <div className="form-field">
+                <label>NO2 (ppb)</label>
+                <input name="no2" type="number" step="any" value={readingForm.no2} onChange={handleReadingChange} />
+              </div>
+              <div className="form-field">
+                <label>SO2 (ppb)</label>
+                <input name="so2" type="number" step="any" value={readingForm.so2} onChange={handleReadingChange} />
+              </div>
+            </div>
+            <div className="form-row">
+              <div className="form-field">
+                <label>O3 (ppb)</label>
+                <input name="o3" type="number" step="any" value={readingForm.o3} onChange={handleReadingChange} />
+              </div>
+              <div className="form-field">
+                <label>CO2 (ppm)</label>
+                <input name="co2" type="number" step="any" value={readingForm.co2} onChange={handleReadingChange} />
+              </div>
+            </div>
+            <div className="form-row">
+              <div className="form-field">
+                <label>Temperature (°C)</label>
+                <input name="temperature" type="number" step="any" value={readingForm.temperature} onChange={handleReadingChange} />
+              </div>
+              <div className="form-field">
+                <label>Humidity (%)</label>
+                <input name="humidity" type="number" step="any" value={readingForm.humidity} onChange={handleReadingChange} />
+              </div>
+            </div>
+            <button type="submit" className="btn btn-primary">
+              Submit reading
+            </button>
+          </form>
+
+          {lastResult && (
+            <div style={{ marginTop: 20, paddingTop: 20, borderTop: '1px solid var(--border)' }}>
+              <div className="section-title">Computed result</div>
+              <span className={badgeClass(lastResult.category)}>
+                <span className="dot" />
+                AQI {lastResult.aqi} — {lastResult.category}
+              </span>
+              <p className="subtitle" style={{ marginTop: 8 }}>
+                Dominant pollutant: <strong className="mono">{lastResult.dominantPollutant?.toUpperCase() || 'N/A'}</strong>
+              </p>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
