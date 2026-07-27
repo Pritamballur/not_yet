@@ -1,15 +1,25 @@
-import { Link } from 'react-router-dom';
-
-export default function NotFound() {
-  return (
-    <div className="page">
-      <div className="empty-state">
-        <h3>Page not found</h3>
-        <p>The page you're looking for doesn't exist.</p>
-        <Link to="/" className="btn btn-primary" style={{ marginTop: 12 }}>
-          Back to dashboard
-        </Link>
-      </div>
-    </div>
-  );
+{
+  "name": "smart-city-pollution-backend",
+  "version": "1.0.0",
+  "description": "Backend API for Smart City Pollution Monitoring System",
+  "main": "server.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "nodemon server.js",
+    "seed": "node utils/seed.js"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "express-validator": "^7.1.0",
+    "jsonwebtoken": "^9.0.2",
+    "mongoose": "^8.5.0",
+    "morgan": "^1.10.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.4"
+  }
 }
